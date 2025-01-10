@@ -1,0 +1,10 @@
+# Kizárt könyvtárak
+workdir/
+**/__pycache__/
+info.txt
+TTS/
+tools/
+script.log
+separate.log
+infer_batch.log
+.gradio
