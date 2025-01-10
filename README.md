@@ -5,8 +5,9 @@ conda create -n f5-tts python=3.10 && conda activate f5-tts
 conda install git
 pip install torch==2.3.0+cu118 torchaudio==2.3.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
 pip install git+https://github.com/SWivid/F5-TTS.git
-pip install num2words
-conda deactivate
+git clone https://github.com/sarpba/F5-TTS_scripts.git
+cd F5-TTS_scripts
+pip install -r requirements.txt
 ```
 
 script usage:
