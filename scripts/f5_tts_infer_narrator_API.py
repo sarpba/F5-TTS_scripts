@@ -195,7 +195,9 @@ def parse_arguments():
     return parser.parse_args()
 
 def process_files(
-    assignments,
+    gen_txt_files,
+    input_dir,
+    input_gen_dir,
     output_dir,
     remove_silence,
     vocab_file,
@@ -205,6 +207,8 @@ def process_files(
     device,
     norm_value,  # Added norm_value parameter
     seed,        # Added seed parameter
+    input_pairs,  # Added input_pairs parameter (dict)
+    input_pair_list,  # Added input_pair_list parameter (list of tuples)
 ):
     try:
         # Initialize normalization if norm_value is provided
@@ -243,10 +247,10 @@ def process_files(
         )
         logger.info(f"Initialized F5TTS on device {device}")
 
-        for wav_path, gen_txt_path in tqdm.tqdm(assignments, desc=f"Processing on {device}"):
+        for gen_txt_path in tqdm.tqdm(gen_txt_files, desc=f"Processing on {device}"):
             # **Rekuzív feldolgozás kezdete**
-            relative_path = wav_path.relative_to(wav_path.parents[1])  # Adjust if necessary
-            output_wav_path = output_dir / relative_path.parent / f"{wav_path.stem}.wav"
+            relative_path = gen_txt_path.relative_to(input_gen_dir).parent
+            output_wav_path = output_dir / relative_path / f"{gen_txt_path.stem}.wav"
             output_wav_path.parent.mkdir(parents=True, exist_ok=True)
             # **Rekuzív feldolgozás vége**
 
@@ -255,12 +259,31 @@ def process_files(
                 logger.info(f"Output file {output_wav_path} already exists. Skipping.")
                 continue
 
-            # Paths to the corresponding .txt files
-            ref_txt_path = wav_path.with_suffix('.txt')
+            # Determine base name
+            base_name = gen_txt_path.stem
 
-            # Check if reference text file exists
+            # Check if matching .wav and .txt exist in input_dir
+            ref_wav_path = input_dir / f"{base_name}.wav"
+            ref_txt_path = input_dir / f"{base_name}.txt"
+
+            if ref_wav_path.exists() and ref_txt_path.exists():
+                logger.info(f"Using matching pair for {gen_txt_path.name}: {ref_wav_path.name}, {ref_txt_path.name}")
+            else:
+                # Randomly select a pair from input_pair_list
+                if not input_pair_list:
+                    logger.error("No input .wav/.txt pairs available for random assignment.")
+                    sys.exit(1)
+                selected_pair = random.choice(input_pair_list)
+                ref_wav_path, ref_txt_path = selected_pair
+                logger.info(f"No matching pair for {gen_txt_path.name}. Randomly selected: {ref_wav_path.name}, {ref_txt_path.name}")
+
+            # Check if reference files exist
+            if not ref_wav_path.exists():
+                logger.warning(f"Reference wav file {ref_wav_path} does not exist. Skipping {gen_txt_path}.")
+                continue
+
             if not ref_txt_path.exists():
-                logger.warning(f"Reference text file not found for {wav_path.relative_to(wav_path.parents[1])}, skipping.")
+                logger.warning(f"Reference txt file {ref_txt_path} does not exist. Skipping {gen_txt_path}.")
                 continue
 
             # Read the reference text
@@ -283,7 +306,7 @@ def process_files(
             # Perform inference
             try:
                 f5tts.infer(
-                    ref_file=str(wav_path),
+                    ref_file=str(ref_wav_path),
                     ref_text=ref_text,
                     gen_text=gen_text,
                     file_wave=str(output_wav_path),
@@ -295,19 +318,21 @@ def process_files(
                 )
                 logger.info(f"Generated audio saved to {output_wav_path}")
             except Exception as e:
-                logger.error(f"Error processing {wav_path.relative_to(wav_path.parents[1])}: {e}", exc_info=True)
+                logger.error(f"Error processing {gen_txt_path.relative_to(input_gen_dir)}: {e}", exc_info=True)
                 continue
 
             # **750 ms szünet beiktatása a következő fájl feldolgozása előtt**
-            #time.sleep(0.75)
-            #logger.debug(f"Paused for 750 ms before processing the next file.")
+            # time.sleep(0.75)
+            # logger.debug(f"Paused for 750 ms before processing the next file.")
 
     except Exception as e:
         logger.critical(f"Critical error in process on device {device}: {e}", exc_info=True)
 
 def main_worker(
     worker_id,
-    assignments,
+    gen_txt_files_chunk,
+    input_dir,
+    input_gen_dir,
     output_dir,
     remove_silence,
     vocab_file,
@@ -316,13 +341,17 @@ def main_worker(
     nfe_step,
     norm_value,  # Added norm_value parameter
     seed,        # Added seed parameter
+    input_pairs,  # Added input_pairs parameter (dict)
+    input_pair_list,  # Added input_pair_list parameter (list of tuples)
 ):
     # Determine the GPU
     device = f"cuda:{worker_id}"
     logger.info(f"Worker {worker_id} using device {device}")
 
     process_files(
-        assignments,
+        gen_txt_files_chunk,
+        input_dir,
+        input_gen_dir,
         output_dir,
         remove_silence,
         vocab_file,
@@ -332,6 +361,8 @@ def main_worker(
         device,
         norm_value,  # Pass norm_value to process_files
         seed,        # Pass seed to process_files
+        input_pairs,  # Pass input_pairs to process_files
+        input_pair_list,  # Pass input_pair_list to process_files
     )
 
 def main():
@@ -342,63 +373,48 @@ def main():
     output_dir = Path(args.output_dir)
 
     # Validate speed and nfe_step parameters
-    if not (0.5 <= args.speed <= 2.0):
-        logger.error(f"Invalid speed value: {args.speed}. Must be between 0.5 and 2.0.")
+    if not (0.3 <= args.speed <= 2.0):
+        logger.error(f"Invalid speed value: {args.speed}. Must be between 0.3 and 2.0.")
         sys.exit(1)
     if not (16 <= args.nfe_step <= 64):
         logger.error(f"Invalid nfe_step value: {args.nfe_step}. Must be between 16 and 64.")
         sys.exit(1)
 
-    # Gather all .wav files from the input directory recursively
-    wav_files = list(input_dir.rglob("*.wav"))
+    # Gather all .wav and .txt files from the input directory recursively
+    all_input_wav = list(input_dir.rglob("*.wav"))
+    all_input_txt = list(input_dir.rglob("*.txt"))
 
-    if not wav_files:
+    if not all_input_wav:
         logger.error(f"No .wav files found in {input_dir} or its subdirectories.")
         sys.exit(1)
+    if not all_input_txt:
+        logger.error(f"No .txt files found in {input_dir} or its subdirectories.")
+        sys.exit(1)
 
-    # Gather all generated .txt files from the input_gen_dir
-    gen_txt_all = list(input_gen_dir.rglob("*.txt"))
+    # Create a dictionary of base_name -> (wav_path, txt_path) if both exist
+    input_pairs = {}
+    for wav_path in all_input_wav:
+        base_name = wav_path.stem
+        txt_path = input_dir / f"{base_name}.txt"
+        if txt_path.exists():
+            input_pairs[base_name] = (wav_path, txt_path)
 
-    if not gen_txt_all:
+    if not input_pairs:
+        logger.error(f"No matching .wav and .txt pairs found in {input_dir}. Exiting.")
+        sys.exit(1)
+
+    # Create a list of all (wav_path, txt_path) tuples for random selection
+    input_pair_list = list(input_pairs.values())
+
+    # Gather all generated .txt files from the input_gen_dir recursively
+    gen_txt_files = list(input_gen_dir.rglob("*.txt"))
+
+    if not gen_txt_files:
         logger.error(f"No .txt files found in {input_gen_dir} or its subdirectories.")
         sys.exit(1)
 
-    # Create a mapping from stem to gen_txt_path for -ig .txt files
-    gen_txt_dict = {gen_txt_path.stem: gen_txt_path for gen_txt_path in gen_txt_all}
-
-    # Prepare a set of available gen_txt files for random assignment
-    available_gen_txt = set(gen_txt_all)
-
-    # List to hold assignments as tuples: (wav_path, gen_txt_path)
-    assignments = []
-
-    for wav_path in wav_files:
-        stem = wav_path.stem
-        if stem in gen_txt_dict:
-            # If matching gen_txt exists, assign it
-            gen_txt_path = gen_txt_dict.pop(stem)
-            assignments.append((wav_path, gen_txt_path))
-            available_gen_txt.remove(gen_txt_path)
-        else:
-            # No matching gen_txt, assign randomly if available
-            if available_gen_txt:
-                gen_txt_path = random.choice(list(available_gen_txt))
-                assignments.append((wav_path, gen_txt_path))
-                available_gen_txt.remove(gen_txt_path)
-            else:
-                logger.warning(f"No available generated .txt files to assign to {wav_path.relative_to(input_dir)}. Skipping.")
-                continue
-
-    total_assigned = len(assignments)
-    total_wavs = len(wav_files)
-    total_gen_txt = len(gen_txt_all)
-
-    logger.info(f"Total .wav files: {total_wavs}")
-    logger.info(f"Total .txt files in generation directory: {total_gen_txt}")
-    logger.info(f"Total assignments made: {total_assigned}")
-
-    if total_assigned < total_wavs:
-        logger.warning(f"{total_wavs - total_assigned} .wav files were not assigned a generated .txt file due to insufficient .txt files in the generation directory.")
+    logger.info(f"Number of input pairs: {len(input_pairs)}")
+    logger.info(f"Number of generated .txt files: {len(gen_txt_files)}")
 
     # Check the number of available GPUs
     num_gpus = torch.cuda.device_count()
@@ -411,13 +427,10 @@ def main():
     logger.info(f"Number of available GPUs: {num_gpus}")
     logger.info(f"Using {max_workers} parallel workers.")
 
-    # Shuffle the assignments to distribute load evenly
-    random.shuffle(assignments)
-
-    # Distribute the assignments among workers
+    # Distribute the gen_txt_files among workers
     chunks = [[] for _ in range(max_workers)]
-    for idx, assignment in enumerate(assignments):
-        chunks[idx % max_workers].append(assignment)
+    for idx, gen_txt_file in enumerate(gen_txt_files):
+        chunks[idx % max_workers].append(gen_txt_file)
 
     # Create the output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -430,6 +443,8 @@ def main():
             args=(
                 worker_id % num_gpus,
                 chunks[worker_id],
+                input_dir,
+                input_gen_dir,
                 output_dir,
                 args.remove_silence,
                 args.vocab_file,
@@ -438,6 +453,8 @@ def main():
                 args.nfe_step,
                 args.norm,  # Pass norm_value to main_worker
                 args.seed,  # Pass seed to main_worker
+                input_pairs,  # Pass input_pairs to main_worker
+                input_pair_list,  # Pass input_pair_list to main_worker
             )
         )
         p.start()
