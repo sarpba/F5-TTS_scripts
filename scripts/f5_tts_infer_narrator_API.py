@@ -6,8 +6,8 @@ import torch
 import torch.multiprocessing as mp
 import random
 import logging
-import importlib.util  # Dinamikus importáláshoz
-import time  # Alvási funkcióhoz
+import importlib.util  # Added for dynamic importing
+import time  # Added for sleep functionality
 
 import soundfile as sf
 import tqdm
@@ -36,7 +36,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Projekt gyökérkönyvtárának meghatározása globálisan
+# Determine the project root directory once, globally
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 logger.info(f"Project root determined as: {PROJECT_ROOT}")
 
@@ -52,19 +52,19 @@ class F5TTS:
         local_path=None,
         device=None,
     ):
-        # Paraméterek inicializálása
+        # Initialize parameters
         self.final_wave = None
         self.target_sample_rate = target_sample_rate
         self.hop_length = hop_length
         self.seed = -1
         self.mel_spec_type = vocoder_name
 
-        # Eszköz beállítása
+        # Set device
         self.device = device or (
             "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
         )
 
-        # Modellek betöltése
+        # Load models
         self.load_vocoder_model(vocoder_name, local_path)
         self.load_ema_model(model_type, ckpt_file, vocoder_name, vocab_file, ode_method, use_ema)
 
@@ -195,9 +195,7 @@ def parse_arguments():
     return parser.parse_args()
 
 def process_files(
-    wav_files,
-    input_dir,
-    input_gen_dir,
+    assignments,
     output_dir,
     remove_silence,
     vocab_file,
@@ -205,17 +203,17 @@ def process_files(
     speed,
     nfe_step,
     device,
-    norm_value,  # Normalization típusa
-    seed,        # Seed érték
-    gen_txt_files,  # Generált .txt fájlok listája
+    norm_value,  # Added norm_value parameter
+    seed,        # Added seed parameter
 ):
     try:
-        # Normalizáció inicializálása, ha norm_value meg van adva
+        # Initialize normalization if norm_value is provided
         if norm_value is not None:
-            # Normalizáló fájl elérési útjának meghatározása
+            # **Modified Path Construction Starts Here**
+            # Use the globally determined PROJECT_ROOT
             normaliser_path = PROJECT_ROOT / "normalisers" / norm_value / "normaliser.py"
 
-            # Logoljuk az elérési utat hibakereséshez
+            # Log the path for debugging
             logger.info(f"Normaliser path: {normaliser_path}")
 
             if not normaliser_path.exists():
@@ -236,7 +234,7 @@ def process_files(
             normalize_fn = None
             logger.info("No normalization will be applied as --norm parameter was not provided.")
 
-        # F5TTS osztály inicializálása
+        # Initialize F5TTS class
         f5tts = F5TTS(
             vocab_file=vocab_file,
             ckpt_file=ckpt_file,
@@ -245,44 +243,35 @@ def process_files(
         )
         logger.info(f"Initialized F5TTS on device {device}")
 
-        # Véletlenszerűség biztosítása minden munkafolyamatban
-        random.seed(seed + device.count(':'))  # Külön seed minden GPU számára
-
-        for wav_path in tqdm.tqdm(wav_files, desc=f"Processing on {device}"):
-            # Rekurzív feldolgozás kezdete
-            relative_path = wav_path.relative_to(input_dir)
+        for wav_path, gen_txt_path in tqdm.tqdm(assignments, desc=f"Processing on {device}"):
+            # **Rekuzív feldolgozás kezdete**
+            relative_path = wav_path.relative_to(wav_path.parents[1])  # Adjust if necessary
             output_wav_path = output_dir / relative_path.parent / f"{wav_path.stem}.wav"
             output_wav_path.parent.mkdir(parents=True, exist_ok=True)
-            # Rekurzív feldolgozás vége
+            # **Rekuzív feldolgozás vége**
 
-            # Ellenőrizzük, hogy a kimeneti fájl már létezik-e
+            # Check if output file already exists
             if output_wav_path.exists():
                 logger.info(f"Output file {output_wav_path} already exists. Skipping.")
                 continue
 
-            # Hivatkozási szöveg (.txt) elérési útja
-            ref_txt_path = input_dir / relative_path.parent / f"{wav_path.stem}.txt"
+            # Paths to the corresponding .txt files
+            ref_txt_path = wav_path.with_suffix('.txt')
 
-            # Ellenőrizzük, hogy a hivatkozási szöveg fájl létezik-e
+            # Check if reference text file exists
             if not ref_txt_path.exists():
-                logger.warning(f"Reference text file not found for {wav_path.relative_to(input_dir)}, skipping.")
+                logger.warning(f"Reference text file not found for {wav_path.relative_to(wav_path.parents[1])}, skipping.")
                 continue
 
-            # Véletlenszerűen kiválasztunk egy generált szöveget a -ig könyvtárból
-            if not gen_txt_files:
-                logger.error("No generated text files available for random assignment.")
-                sys.exit(1)
-            gen_txt_path = random.choice(gen_txt_files)
-
-            # Hivatkozási szöveg beolvasása
+            # Read the reference text
             with open(ref_txt_path, "r", encoding="utf-8") as f:
                 ref_text = f.read().strip()
 
-            # Generált szöveg beolvasása
+            # Read the generated text
             with open(gen_txt_path, "r", encoding="utf-8") as f:
                 gen_text = f.read().strip()
 
-                # Normalizáció alkalmazása, ha engedélyezett
+                # Apply normalization to gen_text if normalization is enabled
                 if normalize_fn is not None:
                     try:
                         gen_text = normalize_fn(gen_text)
@@ -291,7 +280,7 @@ def process_files(
                         logger.error(f"Normalization failed for {gen_txt_path}: {e}")
                         continue
 
-            # Inference végrehajtása
+            # Perform inference
             try:
                 f5tts.infer(
                     ref_file=str(wav_path),
@@ -306,39 +295,34 @@ def process_files(
                 )
                 logger.info(f"Generated audio saved to {output_wav_path}")
             except Exception as e:
-                logger.error(f"Error processing {wav_path.relative_to(input_dir)}: {e}", exc_info=True)
+                logger.error(f"Error processing {wav_path.relative_to(wav_path.parents[1])}: {e}", exc_info=True)
                 continue
 
-            # 750 ms szünet a következő fájl feldolgozása előtt (opcionális)
-            # time.sleep(0.75)
-            # logger.debug(f"Paused for 750 ms before processing the next file.")
+            # **750 ms szünet beiktatása a következő fájl feldolgozása előtt**
+            #time.sleep(0.75)
+            #logger.debug(f"Paused for 750 ms before processing the next file.")
 
     except Exception as e:
         logger.critical(f"Critical error in process on device {device}: {e}", exc_info=True)
 
 def main_worker(
     worker_id,
-    chunks,
-    input_dir,
-    input_gen_dir,
+    assignments,
     output_dir,
     remove_silence,
     vocab_file,
     ckpt_file,
     speed,
     nfe_step,
-    norm_value,  # Normalization típusa
-    seed,        # Seed érték
-    gen_txt_files,  # Generált .txt fájlok listája
+    norm_value,  # Added norm_value parameter
+    seed,        # Added seed parameter
 ):
-    # GPU meghatározása
+    # Determine the GPU
     device = f"cuda:{worker_id}"
     logger.info(f"Worker {worker_id} using device {device}")
 
     process_files(
-        chunks,
-        input_dir,
-        input_gen_dir,
+        assignments,
         output_dir,
         remove_silence,
         vocab_file,
@@ -348,7 +332,6 @@ def main_worker(
         device,
         norm_value,  # Pass norm_value to process_files
         seed,        # Pass seed to process_files
-        gen_txt_files,  # Pass gen_txt_files to process_files
     )
 
 def main():
@@ -358,55 +341,85 @@ def main():
     input_gen_dir = Path(args.input_gen_dir)
     output_dir = Path(args.output_dir)
 
-    # Validáljuk a speed és nfe_step paramétereket
-    if not (0.3 <= args.speed <= 2.0):
-        logger.error(f"Invalid speed value: {args.speed}. Must be between 0.3 and 2.0.")
+    # Validate speed and nfe_step parameters
+    if not (0.5 <= args.speed <= 2.0):
+        logger.error(f"Invalid speed value: {args.speed}. Must be between 0.5 and 2.0.")
         sys.exit(1)
     if not (16 <= args.nfe_step <= 64):
         logger.error(f"Invalid nfe_step value: {args.nfe_step}. Must be between 16 and 64.")
         sys.exit(1)
 
-    # Összegyűjtjük az összes .wav fájlt a bemeneti könyvtárból rekurzívan
+    # Gather all .wav files from the input directory recursively
     wav_files = list(input_dir.rglob("*.wav"))
 
     if not wav_files:
         logger.error(f"No .wav files found in {input_dir} or its subdirectories.")
         sys.exit(1)
 
-    # Összegyűjtjük az összes generált .txt fájlt a -ig könyvtárból
+    # Gather all generated .txt files from the input_gen_dir
     gen_txt_all = list(input_gen_dir.rglob("*.txt"))
 
     if not gen_txt_all:
         logger.error(f"No .txt files found in {input_gen_dir} or its subdirectories.")
         sys.exit(1)
 
-    # Shuffle the generated .txt fájlok listáját a véletlenszerűség biztosítása érdekében
-    random.shuffle(gen_txt_all)
+    # Create a mapping from stem to gen_txt_path for -ig .txt files
+    gen_txt_dict = {gen_txt_path.stem: gen_txt_path for gen_txt_path in gen_txt_all}
 
-    # Ellenőrizzük, hogy van-e elegendő generált .txt fájl
-    if len(gen_txt_all) < len(wav_files):
-        logger.warning("Number of generated .txt files is less than the number of .wav files. Some .txt files will be reused.")
+    # Prepare a set of available gen_txt files for random assignment
+    available_gen_txt = set(gen_txt_all)
 
-    # Normalizáció esetén biztosítjuk, hogy a generált .txt fájlok listája minden munkafolyamat számára elérhető legyen
-    gen_txt_files = gen_txt_all.copy()
+    # List to hold assignments as tuples: (wav_path, gen_txt_path)
+    assignments = []
 
-    # Ellenőrizzük a rendelkezésre álló GPU-k számát
+    for wav_path in wav_files:
+        stem = wav_path.stem
+        if stem in gen_txt_dict:
+            # If matching gen_txt exists, assign it
+            gen_txt_path = gen_txt_dict.pop(stem)
+            assignments.append((wav_path, gen_txt_path))
+            available_gen_txt.remove(gen_txt_path)
+        else:
+            # No matching gen_txt, assign randomly if available
+            if available_gen_txt:
+                gen_txt_path = random.choice(list(available_gen_txt))
+                assignments.append((wav_path, gen_txt_path))
+                available_gen_txt.remove(gen_txt_path)
+            else:
+                logger.warning(f"No available generated .txt files to assign to {wav_path.relative_to(input_dir)}. Skipping.")
+                continue
+
+    total_assigned = len(assignments)
+    total_wavs = len(wav_files)
+    total_gen_txt = len(gen_txt_all)
+
+    logger.info(f"Total .wav files: {total_wavs}")
+    logger.info(f"Total .txt files in generation directory: {total_gen_txt}")
+    logger.info(f"Total assignments made: {total_assigned}")
+
+    if total_assigned < total_wavs:
+        logger.warning(f"{total_wavs - total_assigned} .wav files were not assigned a generated .txt file due to insufficient .txt files in the generation directory.")
+
+    # Check the number of available GPUs
     num_gpus = torch.cuda.device_count()
     if num_gpus == 0:
         logger.error("No GPUs detected. Exiting.")
         sys.exit(1)
 
-    # Meghatározzuk a munkafolyamatok számát
+    # Determine the number of workers
     max_workers = args.max_workers or num_gpus
     logger.info(f"Number of available GPUs: {num_gpus}")
     logger.info(f"Using {max_workers} parallel workers.")
 
-    # Elosztjuk a fájlokat a munkafolyamatok között
-    chunks = [[] for _ in range(max_workers)]
-    for idx, wav_file in enumerate(wav_files):
-        chunks[idx % max_workers].append(wav_file)
+    # Shuffle the assignments to distribute load evenly
+    random.shuffle(assignments)
 
-    # Létrehozzuk a kimeneti könyvtárat, ha nem létezik
+    # Distribute the assignments among workers
+    chunks = [[] for _ in range(max_workers)]
+    for idx, assignment in enumerate(assignments):
+        chunks[idx % max_workers].append(assignment)
+
+    # Create the output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Start the processes
@@ -417,8 +430,6 @@ def main():
             args=(
                 worker_id % num_gpus,
                 chunks[worker_id],
-                input_dir,
-                input_gen_dir,
                 output_dir,
                 args.remove_silence,
                 args.vocab_file,
@@ -427,14 +438,13 @@ def main():
                 args.nfe_step,
                 args.norm,  # Pass norm_value to main_worker
                 args.seed,  # Pass seed to main_worker
-                gen_txt_files,  # Pass gen_txt_files to main_worker
             )
         )
         p.start()
         processes.append(p)
         logger.info(f"Started process {p.pid} for worker {worker_id} on device cuda:{worker_id % num_gpus}")
 
-    # Várunk, amíg minden folyamat befejeződik
+    # Wait for all processes to finish
     for p in processes:
         p.join()
         if p.exitcode != 0:
@@ -443,5 +453,5 @@ def main():
             logger.info(f"Process {p.pid} finished successfully.")
 
 if __name__ == "__main__":
-    mp.set_start_method('spawn')  # Biztonságosabb multi-GPU környezetben
+    mp.set_start_method('spawn')  # Safer for multi-GPU environments
     main()
