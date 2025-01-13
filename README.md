@@ -1,4 +1,4 @@
-# F5-TTS_scripts (NOT WORKING YET)
+# F5-TTS_scripts
 Prepare F5-TTS anaconda enviroment:
 ```
 conda create -n f5-tts python=3.10 && conda activate f5-tts
