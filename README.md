@@ -57,3 +57,8 @@ options:
   --seed SEED           Random seed for reproducibility. Default is -1, which
                         selects a random seed.
 ```
+example:
+```
+cd scripts
+python f5_tts_infer_narrator_API.py -i INPUT_DIR -ig INPUT_GEN_DIR -o OUTPUT_DIR --vocab_file hun_v4_vocab.txt --ckpt_file model_349720.pt
+```
