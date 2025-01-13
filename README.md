@@ -4,11 +4,12 @@ Prepare F5-TTS anaconda enviroment:
 conda create -n f5-tts python=3.10 && conda activate f5-tts
 conda install git
 ```
-```
 # NVIDIA GPU: install pytorch with your CUDA version, e.g.
+```
 pip install torch==2.3.0+cu118 torchaudio==2.3.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
-
+```
 # AMD GPU: install pytorch with your ROCm version, e.g.
+```
 pip install torch==2.5.1+rocm6.2 torchaudio==2.5.1+rocm6.2 --extra-index-url https://download.pytorch.org/whl/rocm6.2
 ```
 ```
