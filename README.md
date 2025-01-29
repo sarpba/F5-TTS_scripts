@@ -60,7 +60,7 @@ options:
 example:
 ```
 cd scripts
-python f5_tts_infer_narrator_API.py -i INPUT_DIR -ig INPUT_GEN_DIR -o OUTPUT_DIR --vocab_file hun_v4_vocab.txt --ckpt_file model_349720.pt --norm hun
+python f5_tts_infer_API.py -i INPUT_DIR -ig INPUT_GEN_DIR -o OUTPUT_DIR --vocab_file hun_v4_vocab.txt --ckpt_file model_349720.pt --norm hun
 ```
 
 
@@ -97,7 +97,7 @@ pip install -r requirements.txt
 ## Használat
 ```
 cd scripts
-python f5_tts_infer_narrator_API.py -i INPUT_DIR -ig INPUT_GEN_DIR -o OUTPUT_DIR --vocab_file hun_v4_vocab.txt --ckpt_file model_349720.pt --norm hun
+python f5_tts_infer_API.py -i INPUT_DIR -ig INPUT_GEN_DIR -o OUTPUT_DIR --vocab_file hun_v4_vocab.txt --ckpt_file model_349720.pt --norm hun
 ```
 
 ### Argumentumok magyarázata
