@@ -60,31 +60,9 @@ options:
 example:
 ```
 cd scripts
-python f5_tts_infer_narrator_API.py -i INPUT_DIR -ig INPUT_GEN_DIR -o OUTPUT_DIR --vocab_file hun_v4_vocab.txt --ckpt_file model_349720.pt
-```Prepare F5-TTS anaconda enviroment:
-```
-conda create -n f5-tts python=3.10 && conda activate f5-tts
-conda install git
-```
-# NVIDIA GPU: install pytorch with your CUDA version, e.g.
-```
-pip install torch==2.3.0+cu118 torchaudio==2.3.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
-```
-# AMD GPU: install pytorch with your ROCm version, e.g.
-```
-pip install torch==2.5.1+rocm6.2 torchaudio==2.5.1+rocm6.2 --extra-index-url https://download.pytorch.org/whl/rocm6.2
-```
-```
-pip install git+https://github.com/SWivid/F5-TTS.git
-
-git clone https://github.com/sarpba/F5-TTS_scripts.git
-cd F5-TTS_scripts
-pip install -r requirements.txt
+python f5_tts_infer_narrator_API.py -i INPUT_DIR -ig INPUT_GEN_DIR -o OUTPUT_DIR --vocab_file hun_v4_vocab.txt --ckpt_file model_349720.pt --norm hun
 ```
 
-# F5-TTS Batch Inference Script
-
-Ez a README fájl bemutatja az F5-TTS többszálú inference script működését és használatát.
 
 ## Bevezetés
 
@@ -117,23 +95,9 @@ pip install -r requirements.txt
 ```
 
 ## Használat
-
-### Parancssori argumentumok
-
-A script az alábbi argumentumokat fogadja el:
-
-```bash
-python f5_tts_infer_API.py \
-    --input_dir path/to/reference_wavs \
-    --input_gen_dir path/to/generated_texts \
-    --output_dir path/to/output_wavs \
-    --vocab_file path/to/vocab.txt \
-    --ckpt_file path/to/model_checkpoint.pt \
-    --speed 1.0 \
-    --nfe_step 32 \
-    --max_workers 2 \
-    --norm hun \
-    --seed 42 
+```
+cd scripts
+python f5_tts_infer_narrator_API.py -i INPUT_DIR -ig INPUT_GEN_DIR -o OUTPUT_DIR --vocab_file hun_v4_vocab.txt --ckpt_file model_349720.pt --norm hun
 ```
 
 ### Argumentumok magyarázata
