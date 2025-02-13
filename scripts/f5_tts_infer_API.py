@@ -147,7 +147,7 @@ class F5TTS:
         return wav, sr, spect
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="F5-TTS Batch Inference Script with Multi-GPU Support")
+    parser = argparse.ArgumentParser(description="F5-TTS Batch Inference Script with Multi-GPU/CPU Support")
     parser.add_argument(
         "-i", "--input_dir", type=str, required=True,
         help="Input directory containing .wav and corresponding .txt files (reference texts)"
@@ -182,7 +182,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--max_workers", type=int, default=None,
-        help="Maximum number of parallel workers. Defaults to the number of available GPUs."
+        help="Maximum number of parallel workers. Defaults to the number of available GPUs or 1 for CPU."
     )
     parser.add_argument(
         "--norm", type=str, required=False, default=None,
@@ -191,6 +191,10 @@ def parse_arguments():
     parser.add_argument(
         "--seed", type=int, default=-1,
         help="Random seed for reproducibility. Default is -1, which selects a random seed."
+    )
+    parser.add_argument(
+        "--device", type=str, default=None,
+        help="Device to use for inference (e.g., 'cpu', 'cuda:0'). If not provided, automatically selects GPU if available."
     )
     return parser.parse_args()
 
@@ -325,9 +329,15 @@ def main_worker(
     nfe_step,
     norm_value,  # Added norm_value parameter
     seed,        # Added seed parameter
+    device_mode, # Added device_mode parameter
 ):
-    # Determine the GPU
-    device = f"cuda:{worker_id}"
+    # Determine the device to use
+    if device_mode == "cuda":
+        device = f"cuda:{worker_id}"
+    elif device_mode.startswith("cuda"):
+        device = device_mode
+    else:
+        device = device_mode
     logger.info(f"Worker {worker_id} using device {device}")
 
     process_files(
@@ -367,16 +377,27 @@ def main():
         logger.error(f"No .wav files found in {input_dir} or its subdirectories.")
         sys.exit(1)
 
-    # Check the number of available GPUs
-    num_gpus = torch.cuda.device_count()
-    if num_gpus == 0:
-        logger.error("No GPUs detected. Exiting.")
-        sys.exit(1)
+    # Determine device and number of workers
+    if args.device is not None:
+        device_mode = args.device.lower()
+        logger.info(f"Using device: {device_mode} as specified by --device")
+        max_workers = args.max_workers or 1
+    else:
+        if torch.cuda.is_available():
+            num_gpus = torch.cuda.device_count()
+            device_mode = "cuda"
+            max_workers = args.max_workers or num_gpus
+            logger.info(f"Number of available GPUs: {num_gpus}")
+        elif torch.backends.mps.is_available():
+            device_mode = "mps"
+            max_workers = args.max_workers or 1
+            logger.info("Using Apple Silicon MPS device")
+        else:
+            device_mode = "cpu"
+            max_workers = args.max_workers or 1
+            logger.info("Using CPU device")
 
-    # Determine the number of workers
-    max_workers = args.max_workers or num_gpus
-    logger.info(f"Number of available GPUs: {num_gpus}")
-    logger.info(f"Using {max_workers} parallel workers.")
+    logger.info(f"Using {max_workers} parallel worker(s) on device mode: {device_mode}")
 
     # Distribute the files among workers
     chunks = [[] for _ in range(max_workers)]
@@ -392,7 +413,7 @@ def main():
         p = mp.Process(
             target=main_worker,
             args=(
-                worker_id % num_gpus,
+                worker_id,
                 chunks[worker_id],
                 input_dir,
                 input_gen_dir,
@@ -404,11 +425,12 @@ def main():
                 args.nfe_step,
                 args.norm,  # Pass norm_value to main_worker
                 args.seed,  # Pass seed to main_worker
+                device_mode,
             )
         )
         p.start()
         processes.append(p)
-        logger.info(f"Started process {p.pid} for worker {worker_id} on device cuda:{worker_id % num_gpus}")
+        logger.info(f"Started process {p.pid} for worker {worker_id} on device mode {device_mode}")
 
     # Wait for all processes to finish
     for p in processes:
