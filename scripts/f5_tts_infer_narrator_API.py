@@ -59,7 +59,7 @@ class F5TTS:
         self.seed = -1
         self.mel_spec_type = vocoder_name
 
-        # Set device
+        # Set device: ha a device paraméter meg van adva, azt használjuk
         self.device = device or (
             "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
         )
@@ -147,7 +147,7 @@ class F5TTS:
         return wav, sr, spect
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="F5-TTS Batch Inference Script with Multi-GPU Support")
+    parser = argparse.ArgumentParser(description="F5-TTS Batch Inference Script with Multi-GPU/CPU Support")
     parser.add_argument(
         "-i", "--input_dir", type=str, required=True,
         help="Input directory containing .wav and corresponding .txt files (reference texts)"
@@ -182,7 +182,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--max_workers", type=int, default=None,
-        help="Maximum number of parallel workers. Defaults to the number of available GPUs."
+        help="Maximum number of parallel workers. Defaults to the number of available GPUs (or 1 if using CPU)."
     )
     parser.add_argument(
         "--norm", type=str, required=False, default=None,
@@ -191,6 +191,11 @@ def parse_arguments():
     parser.add_argument(
         "--seed", type=int, default=-1,
         help="Random seed for reproducibility. Default is -1, which selects a random seed."
+    )
+    # Új kapcsoló a device kiválasztásához (pl. --device cpu)
+    parser.add_argument(
+        "--device", type=str, default=None,
+        help="Device to use. Specify 'cpu' to run on CPU only. If not provided, GPU will be used if available."
     )
     return parser.parse_args()
 
@@ -343,10 +348,17 @@ def main_worker(
     seed,        # Added seed parameter
     input_pairs,  # Added input_pairs parameter (dict)
     input_pair_list,  # Added input_pair_list parameter (list of tuples)
+    device_arg  # Új paraméter: a parancssori --device értéke
 ):
-    # Determine the GPU
-    device = f"cuda:{worker_id}"
-    logger.info(f"Worker {worker_id} using device {device}")
+    # Ha a --device kapcsoló "cpu", akkor CPU-t használunk
+    if device_arg is not None and device_arg.lower() == "cpu":
+        device = "cpu"
+        logger.info(f"Worker {worker_id} running on CPU")
+    else:
+        # GPU módban: használjuk a rendelkezésre álló GPU-kat
+        num_gpus = torch.cuda.device_count()
+        device = f"cuda:{worker_id % num_gpus}"
+        logger.info(f"Worker {worker_id} using device {device}")
 
     process_files(
         gen_txt_files_chunk,
@@ -416,16 +428,20 @@ def main():
     logger.info(f"Number of input pairs: {len(input_pairs)}")
     logger.info(f"Number of generated .txt files: {len(gen_txt_files)}")
 
-    # Check the number of available GPUs
-    num_gpus = torch.cuda.device_count()
-    if num_gpus == 0:
-        logger.error("No GPUs detected. Exiting.")
-        sys.exit(1)
-
-    # Determine the number of workers
-    max_workers = args.max_workers or num_gpus
-    logger.info(f"Number of available GPUs: {num_gpus}")
-    logger.info(f"Using {max_workers} parallel workers.")
+    # CPU mód: ha a --device cpu van megadva, akkor nem kell GPU-kat ellenőrizni
+    if args.device is not None and args.device.lower() == "cpu":
+        device_arg = "cpu"
+        max_workers = args.max_workers if args.max_workers is not None else 1
+        logger.info("Running on CPU.")
+    else:
+        device_arg = args.device  # lehet None, vagy ha konkrét GPU-t adtunk meg
+        num_gpus = torch.cuda.device_count()
+        if num_gpus == 0:
+            logger.error("No GPUs detected. Exiting.")
+            sys.exit(1)
+        max_workers = args.max_workers if args.max_workers is not None else num_gpus
+        logger.info(f"Number of available GPUs: {num_gpus}")
+        logger.info(f"Using {max_workers} parallel workers.")
 
     # Distribute the gen_txt_files among workers
     chunks = [[] for _ in range(max_workers)]
@@ -441,7 +457,7 @@ def main():
         p = mp.Process(
             target=main_worker,
             args=(
-                worker_id % num_gpus,
+                worker_id,
                 chunks[worker_id],
                 input_dir,
                 input_gen_dir,
@@ -455,11 +471,15 @@ def main():
                 args.seed,  # Pass seed to main_worker
                 input_pairs,  # Pass input_pairs to main_worker
                 input_pair_list,  # Pass input_pair_list to main_worker
+                device_arg,  # Pass the device argument (e.g., "cpu" or None)
             )
         )
         p.start()
         processes.append(p)
-        logger.info(f"Started process {p.pid} for worker {worker_id} on device cuda:{worker_id % num_gpus}")
+        if device_arg is not None and device_arg.lower() == "cpu":
+            logger.info(f"Started process {p.pid} on CPU")
+        else:
+            logger.info(f"Started process {p.pid} for worker {worker_id} on device cuda:{worker_id % num_gpus}")
 
     # Wait for all processes to finish
     for p in processes:
