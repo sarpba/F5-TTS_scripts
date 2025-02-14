@@ -22,40 +22,32 @@ pip install -r requirements.txt
 
 script usage:
 ```
-usage: f5_tts_infer_API.py [-h] -i INPUT_DIR -ig INPUT_GEN_DIR -o OUTPUT_DIR
-                           [--remove_silence] --vocab_file VOCAB_FILE
-                           --ckpt_file CKPT_FILE [--speed SPEED]
-                           [--nfe_step NFE_STEP] [--max_workers MAX_WORKERS]
-                           [--norm NORM] [--seed SEED]
+usage: f5_tts_infer_API.py [-h] -i INPUT_DIR -ig INPUT_GEN_DIR -o OUTPUT_DIR [--remove_silence] --vocab_file VOCAB_FILE --ckpt_file CKPT_FILE [--speed SPEED] [--nfe_step NFE_STEP]
+                           [--max_workers MAX_WORKERS] [--norm NORM] [--seed SEED] [--device DEVICE]
 
-F5-TTS Batch Inference Script with Multi-GPU Support
+F5-TTS Batch Inference Script with Multi-GPU/CPU Support
 
 options:
   -h, --help            show this help message and exit
   -i INPUT_DIR, --input_dir INPUT_DIR
-                        Input directory containing .wav and corresponding .txt
-                        files (reference texts)
+                        Input directory containing .wav and corresponding .txt files (reference texts)
   -ig INPUT_GEN_DIR, --input_gen_dir INPUT_GEN_DIR
-                        Input generation directory containing .txt files
-                        (generated texts) with the same names as input .wav
-                        files
+                        Input generation directory containing .txt files (generated texts) with the same names as input .wav files
   -o OUTPUT_DIR, --output_dir OUTPUT_DIR
                         Output directory to save generated .wav files
   --remove_silence      Remove silence from generated audio
   --vocab_file VOCAB_FILE
                         Path to the vocabulary file (e.g., /path/to/vocab.txt)
   --ckpt_file CKPT_FILE
-                        Path to the model checkpoint file (e.g.,
-                        /path/to/model.pt)
+                        Path to the model checkpoint file (e.g., /path/to/model.pt)
   --speed SPEED         Speed of the generated audio (0.3-2.0). Default is 1.0
   --nfe_step NFE_STEP   Number of NFE steps (16-64). Default is 32
   --max_workers MAX_WORKERS
-                        Maximum number of parallel workers. Defaults to the
-                        number of available GPUs.
-  --norm NORM           Normalization type (e.g., 'hun', 'eng'). Determines
-                        which normalizer to use.
-  --seed SEED           Random seed for reproducibility. Default is -1, which
-                        selects a random seed.
+                        Maximum number of parallel workers. Defaults to the number of available GPUs or CPU cores (2 for CPU).
+  --norm NORM           Normalization type (e.g., 'hun', 'eng'). Determines which normalizer to use.
+  --seed SEED           Random seed for reproducibility. Default is -1, which selects a random seed.
+  --device DEVICE       Device to use for inference (e.g., 'cpu', 'cuda:0'). If not provided, automatically selects GPU if available.
+
 ```
 example:
 ```
@@ -111,9 +103,10 @@ python f5_tts_infer_API.py -i INPUT_DIR -ig INPUT_GEN_DIR -o OUTPUT_DIR --vocab_
 | `--ckpt_file` | Az előtanított modell ellenőrzőpontja (`.pt` fájl). |
 | `--speed` | A beszéd sebessége (0.3 és 2.0 között). Alapértelmezett: `1.0`. |
 | `--nfe_step` | Az inference lépéseinek száma (16 és 64 között). Alapértelmezett: `32`. |
-| `--max_workers` | A párhuzamosan futó folyamatok száma. Alapértelmezés szerint a rendelkezésre álló GPU-k száma. |
+| `--max_workers` | A párhuzamosan futó folyamatok száma. Alapértelmezés szerint a rendelkezésre álló GPU-k száma. vagy CPU esetén 2|
 | `--norm` | Normalizáció típusa (`hun` a magyar nyelvhez, `eng` az angol nyelvhez). |
 | `--seed` | A véletlenszám-generátor magja a reprodukálhatóság érdekében. Alapértelmezés szerint véletlenszerű. |
+| `--device` |  A használni kívánt hardver (e.g., 'cpu', 'cuda:0'). Ha nincs megadva, akkor a rendelkezésre álló ősszes GPU-t használja|
 
 ## A script működése
 
