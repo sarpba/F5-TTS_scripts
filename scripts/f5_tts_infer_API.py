@@ -182,7 +182,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--max_workers", type=int, default=None,
-        help="Maximum number of parallel workers. Defaults to the number of available GPUs or 1 for CPU."
+        help="Maximum number of parallel workers. Defaults to the number of available GPUs or CPU cores (2 for CPU)."
     )
     parser.add_argument(
         "--norm", type=str, required=False, default=None,
@@ -381,7 +381,10 @@ def main():
     if args.device is not None:
         device_mode = args.device.lower()
         logger.info(f"Using device: {device_mode} as specified by --device")
-        max_workers = args.max_workers or 1
+        if device_mode == "cpu":
+            max_workers = args.max_workers or 2
+        else:
+            max_workers = args.max_workers or 1
     else:
         if torch.cuda.is_available():
             num_gpus = torch.cuda.device_count()
@@ -394,8 +397,8 @@ def main():
             logger.info("Using Apple Silicon MPS device")
         else:
             device_mode = "cpu"
-            max_workers = args.max_workers or 1
-            logger.info("Using CPU device")
+            max_workers = args.max_workers or 2
+            logger.info("Using CPU device (defaulting to 2 workers)")
 
     logger.info(f"Using {max_workers} parallel worker(s) on device mode: {device_mode}")
 
@@ -441,5 +444,5 @@ def main():
             logger.info(f"Process {p.pid} finished successfully.")
 
 if __name__ == "__main__":
-    mp.set_start_method('spawn')  # Safer for multi-GPU environments
+    mp.set_start_method('spawn')  # Safer for multi-GPU/CPU environments
     main()

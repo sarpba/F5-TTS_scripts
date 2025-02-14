@@ -182,7 +182,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--max_workers", type=int, default=None,
-        help="Maximum number of parallel workers. Defaults to the number of available GPUs (or 1 if using CPU)."
+        help="Maximum number of parallel workers. Defaults to the number of available GPUs, or 2 if using CPU."
     )
     parser.add_argument(
         "--norm", type=str, required=False, default=None,
@@ -428,11 +428,11 @@ def main():
     logger.info(f"Number of input pairs: {len(input_pairs)}")
     logger.info(f"Number of generated .txt files: {len(gen_txt_files)}")
 
-    # CPU mód: ha a --device cpu van megadva, akkor nem kell GPU-kat ellenőrizni
+    # CPU mód: ha a --device cpu van megadva, akkor a default érték legyen 2 workers
     if args.device is not None and args.device.lower() == "cpu":
         device_arg = "cpu"
-        max_workers = args.max_workers if args.max_workers is not None else 1
-        logger.info("Running on CPU.")
+        max_workers = args.max_workers if args.max_workers is not None else 2
+        logger.info(f"Running on CPU with {max_workers} workers.")
     else:
         device_arg = args.device  # lehet None, vagy ha konkrét GPU-t adtunk meg
         num_gpus = torch.cuda.device_count()
@@ -490,5 +490,5 @@ def main():
             logger.info(f"Process {p.pid} finished successfully.")
 
 if __name__ == "__main__":
-    mp.set_start_method('spawn')  # Safer for multi-GPU environments
+    mp.set_start_method('spawn')  # Safer for multi-GPU/CPU environments
     main()
